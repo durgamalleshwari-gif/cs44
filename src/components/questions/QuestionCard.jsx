@@ -3,18 +3,17 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   ChevronUp,
+  ChevronDown,
   MessageCircle,
   Eye,
   Clock,
   Paperclip,
   CheckCircle2,
 } from 'lucide-react';
+
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/components/ui/Toast';
 import { useUpvote } from '@/hooks/useUpvote';
-import { useTranslation } from '@/hooks/useTranslation';
-import TranslationButton from '@/components/translation/TranslationButton';
-import TranslationBadge from '@/components/translation/TranslationBadge';
 
 function formatTimeAgo(dateStr) {
   if (!dateStr) return '';
@@ -51,36 +50,25 @@ export default function QuestionCard({ question, index = 0 }) {
 
   const { user } = useAuth();
   const { showToast } = useToast();
-  const { toggleQuestionUpvote, hasUpvotedQuestion } = useUpvote();
-
-  const preferredLanguage = user?.preferred_language || 'en';
-  const titleTranslation = useTranslation({
-    contentId: `question-title-${id}`,
-    content: title,
-    autoTargetLanguage: preferredLanguage,
-    autoTranslate: Boolean(user?.preferred_language),
-  });
-  const descriptionTranslation = useTranslation({
-    contentId: `question-description-${id}`,
-    content: description,
-    autoTargetLanguage: preferredLanguage,
-    autoTranslate: Boolean(user?.preferred_language),
-  });
+  const { toggleQuestionVote, hasUpvotedQuestion, hasDownvotedQuestion } = useUpvote();
 
   const [upvoted, setUpvoted] = useState(false);
-  const [localUpvotes, setLocalUpvotes] = useState(upvotes || 0);
+  const [downvoted, setDownvoted] = useState(false);
+  const [localScore, setLocalScore] = useState((upvotes || 0) - (question.downvotes || 0));
 
   useEffect(() => {
-    setLocalUpvotes(upvotes || 0);
-  }, [upvotes]);
+    setLocalScore((upvotes || 0) - (question.downvotes || 0));
+  }, [upvotes, question.downvotes]);
 
   useEffect(() => {
     if (user) {
       hasUpvotedQuestion(id).then(setUpvoted);
+      hasDownvotedQuestion(id).then(setDownvoted);
     } else {
       setUpvoted(false);
+      setDownvoted(false);
     }
-  }, [id, user, hasUpvotedQuestion]);
+  }, [id, user, hasUpvotedQuestion, hasDownvotedQuestion]);
 
   const handleUpvote = async (e) => {
     e.preventDefault();
@@ -90,11 +78,47 @@ export default function QuestionCard({ question, index = 0 }) {
       return;
     }
     try {
-      await toggleQuestionUpvote(id);
-      setUpvoted(!upvoted);
-      setLocalUpvotes((prev) => (upvoted ? prev - 1 : prev + 1));
+      await toggleQuestionVote(id, true);
+      if (upvoted) {
+        setUpvoted(false);
+        setLocalScore((prev) => prev - 1);
+      } else {
+        setUpvoted(true);
+        if (downvoted) {
+          setDownvoted(false);
+          setLocalScore((prev) => prev + 2);
+        } else {
+          setLocalScore((prev) => prev + 1);
+        }
+      }
     } catch (err) {
-      console.error('Upvote error:', err);
+      showToast(err.message || 'Failed to upvote', 'error');
+    }
+  };
+
+  const handleDownvote = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!user) {
+      showToast('Please sign in to downvote', 'info');
+      return;
+    }
+    try {
+      await toggleQuestionVote(id, false);
+      if (downvoted) {
+        setDownvoted(false);
+        setLocalScore((prev) => prev + 1);
+      } else {
+        setDownvoted(true);
+        if (upvoted) {
+          setUpvoted(false);
+          setLocalScore((prev) => prev - 2);
+        } else {
+          setLocalScore((prev) => prev - 1);
+        }
+      }
+    } catch (err) {
+      showToast(err.message || 'Failed to downvote', 'error');
     }
   };
 
@@ -105,84 +129,56 @@ export default function QuestionCard({ question, index = 0 }) {
     <motion.div
       initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25, delay: index * 0.03 }}
+      exit={{ opacity: 0 }}
       whileHover={{ y: -3.5, scale: 1.005 }}
       transition={{ type: 'spring', stiffness: 400, damping: 25 }}
       className="group block"
     >
       <div className="flex gap-4 p-5 rounded-2xl bg-white/70 dark:bg-zinc-900/40 backdrop-blur-md border border-zinc-200/50 dark:border-zinc-800/60 shadow-sm hover:border-indigo-500/30 dark:hover:border-purple-500/35 hover:shadow-lg dark:hover:shadow-[0_0_30px_-5px_rgba(168,85,247,0.15)] transition-all duration-300">
         {/* Vote column */}
-        <div className="flex flex-col items-center gap-1 shrink-0 pt-1">
+        <div className="flex flex-col items-center gap-0.5 shrink-0 pt-1">
           <button
             onClick={handleUpvote}
             className={`p-1 rounded-lg transition-all duration-200 cursor-pointer ${
               upvoted
-                ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-500/10'
+                ? 'text-indigo-650 dark:text-indigo-405 bg-indigo-500/10'
                 : 'text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800/80'
             }`}
           >
             <ChevronUp className={`w-5 h-5 transition-transform ${upvoted ? 'scale-110 stroke-[3px]' : ''}`} />
           </button>
-          <span className={`text-sm font-bold transition-colors ${upvoted ? 'text-indigo-600 dark:text-indigo-400' : 'text-zinc-700 dark:text-zinc-300'}`}>
-            {localUpvotes}
+          
+          <span className={`text-xs font-bold transition-colors ${upvoted ? 'text-indigo-600 dark:text-indigo-400' : downvoted ? 'text-rose-500' : 'text-zinc-700 dark:text-zinc-300'}`}>
+            {localScore}
           </span>
+
+          <button
+            onClick={handleDownvote}
+            className={`p-1 rounded-lg transition-all duration-200 cursor-pointer ${
+              downvoted
+                ? 'text-rose-500 bg-rose-500/10'
+                : 'text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800/80'
+            }`}
+          >
+            <ChevronDown className={`w-5 h-5 transition-transform ${downvoted ? 'scale-110 stroke-[3px]' : ''}`} />
+          </button>
         </div>
 
         {/* Main content */}
         <div className="flex-1 min-w-0">
           {/* Title */}
-          <div className="flex items-start justify-between gap-3">
-            <Link
-              to={`/question/${id}`}
-              className="text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-100 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors block"
-            >
-              {titleTranslation.displayText}
-            </Link>
-            <TranslationButton
-              originalLanguage={titleTranslation.originalLanguage}
-              currentLanguage={titleTranslation.currentLanguage}
-              isTranslated={titleTranslation.isTranslated}
-              status={titleTranslation.status}
-              error={titleTranslation.error}
-              onTranslate={titleTranslation.translate}
-              onReset={titleTranslation.resetTranslation}
-            />
-          </div>
-          {titleTranslation.isTranslated && (
-            <div className="mt-2">
-              <TranslationBadge
-                originalLanguage={titleTranslation.originalLanguage}
-                targetLanguage={titleTranslation.currentLanguage}
-              />
-            </div>
-          )}
+          <Link
+            to={`/question/${id}`}
+            className="text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-100 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors line-clamp-1 block"
+          >
+            {title}
+          </Link>
 
           {/* Description preview */}
           {description && (
-            <div className="mt-3">
-              <div className="flex items-start justify-between gap-3">
-                <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                  {descriptionTranslation.displayText}
-                </p>
-                <TranslationButton
-                  originalLanguage={descriptionTranslation.originalLanguage}
-                  currentLanguage={descriptionTranslation.currentLanguage}
-                  isTranslated={descriptionTranslation.isTranslated}
-                  status={descriptionTranslation.status}
-                  error={descriptionTranslation.error}
-                  onTranslate={descriptionTranslation.translate}
-                  onReset={descriptionTranslation.resetTranslation}
-                />
-              </div>
-              {descriptionTranslation.isTranslated && (
-                <div className="mt-2">
-                  <TranslationBadge
-                    originalLanguage={descriptionTranslation.originalLanguage}
-                    targetLanguage={descriptionTranslation.currentLanguage}
-                  />
-                </div>
-              )}
-            </div>
+            <p className="mt-1.5 text-sm text-zinc-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">
+              {description}
+            </p>
           )}
 
           {/* Bottom row */}

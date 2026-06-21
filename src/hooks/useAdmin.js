@@ -11,6 +11,7 @@ export function useAdmin() {
     totalQuestions: 0,
   })
   const [allAnswers, setAllAnswers] = useState([])
+  const [allQuestions, setAllQuestions] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const { isAdmin } = useAuth()
@@ -61,6 +62,37 @@ export function useAdmin() {
 
       setAllAnswers(data || [])
       return data || []
+    } catch (err) {
+      setError(err.message)
+      return []
+    } finally {
+      setLoading(false)
+    }
+  }, [isAdmin])
+
+  const fetchAllQuestions = useCallback(async () => {
+    if (!isAdmin) return
+    setLoading(true)
+    setError(null)
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('questions')
+        .select(`
+          *,
+          users:user_id (id, name, email, avatar),
+          answers:answers (id)
+        `)
+        .order('created_at', { ascending: false })
+
+      if (fetchError) throw fetchError
+
+      const enriched = (data || []).map(q => ({
+        ...q,
+        answer_count: (q.answers || []).length
+      }))
+
+      setAllQuestions(enriched)
+      return enriched
     } catch (err) {
       setError(err.message)
       return []
@@ -133,15 +165,220 @@ export function useAdmin() {
     }
   }, [isAdmin])
 
+  const adminDeleteQuestion = useCallback(async (id) => {
+    if (!isAdmin) throw new Error('Admin only')
+    try {
+      const { error: deleteError } = await supabase
+        .from('questions')
+        .delete()
+        .eq('id', id)
+
+      if (deleteError) throw deleteError
+      setAllQuestions(prev => prev.filter(q => q.id !== id))
+    } catch (err) {
+      setError(err.message)
+      throw err
+    }
+  }, [isAdmin])
+
+  const bulkDeleteQuestions = useCallback(async (ids) => {
+    if (!isAdmin) throw new Error('Admin only')
+    try {
+      const { error: deleteError } = await supabase
+        .from('questions')
+        .delete()
+        .in('id', ids)
+
+      if (deleteError) throw deleteError
+      setAllQuestions(prev => prev.filter(q => !ids.includes(q.id)))
+    } catch (err) {
+      setError(err.message)
+      throw err
+    }
+  }, [isAdmin])
+
+  const fetchUsers = useCallback(async () => {
+    if (!isAdmin) return []
+    setLoading(true)
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('users')
+        .select(`
+          *,
+          user_badges (
+            id,
+            badge_id,
+            earned_at,
+            badges (
+              id,
+              badge_name,
+              badge_type,
+              description,
+              icon
+            )
+          )
+        `)
+        .order('name', { ascending: true })
+
+      if (fetchError) throw fetchError
+      return data || []
+    } catch (err) {
+      console.error('Error fetching users:', err)
+      setError(err.message)
+      return []
+    } finally {
+      setLoading(false)
+    }
+  }, [isAdmin])
+
+  const fetchAvailableBadges = useCallback(async () => {
+    if (!isAdmin) return []
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('badges')
+        .select('*')
+        .order('badge_type', { ascending: true })
+
+      if (fetchError) throw fetchError
+      return data || []
+    } catch (err) {
+      console.error('Error fetching available badges:', err)
+      return []
+    }
+  }, [isAdmin])
+
+  const fetchReputationLogs = useCallback(async () => {
+    if (!isAdmin) return []
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('reputation_logs')
+        .select(`
+          *,
+          users:user_id (id, name, email, avatar)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(100)
+
+      if (fetchError) throw fetchError
+      return data || []
+    } catch (err) {
+      console.error('Error fetching reputation logs:', err)
+      return []
+    }
+  }, [isAdmin])
+
+  const adjustUserReputation = useCallback(async (userId, points) => {
+    if (!isAdmin) throw new Error('Admin only')
+    try {
+      const refId = crypto.randomUUID()
+      const { data, error: insertError } = await supabase
+        .from('reputation_logs')
+        .insert({
+          user_id: userId,
+          action_type: 'admin_adjustment',
+          points_awarded: points,
+          reference_id: refId
+        })
+        .select()
+        .single()
+
+      if (insertError) throw insertError
+      return data
+    } catch (err) {
+      console.error('Error adjusting user reputation:', err)
+      throw err
+    }
+  }, [isAdmin])
+
+  const awardUserBadge = useCallback(async (userId, badgeId) => {
+    if (!isAdmin) throw new Error('Admin only')
+    try {
+      const { data, error: insertError } = await supabase
+        .from('user_badges')
+        .insert({
+          user_id: userId,
+          badge_id: badgeId
+        })
+        .select()
+        .single()
+
+      if (insertError) throw insertError
+      return data
+    } catch (err) {
+      console.error('Error awarding badge:', err)
+      throw err
+    }
+  }, [isAdmin])
+
+  const revokeUserBadge = useCallback(async (userId, badgeId) => {
+    if (!isAdmin) throw new Error('Admin only')
+    try {
+      const { error: deleteError } = await supabase
+        .from('user_badges')
+        .delete()
+        .eq('user_id', userId)
+        .eq('badge_id', badgeId)
+
+      if (deleteError) throw deleteError
+      return true
+    } catch (err) {
+      console.error('Error revoking badge:', err)
+      throw err
+    }
+  }, [isAdmin])
+
+  const fetchGamificationAnalytics = useCallback(async () => {
+    if (!isAdmin) return null
+    try {
+      const [totalRepRes, totalBadgesRes, topUserRes] = await Promise.all([
+        supabase.from('users').select('reputation_points'),
+        supabase.from('user_badges').select('id', { count: 'exact', head: true }),
+        supabase.from('users')
+          .select('id, name, email, avatar, reputation_points')
+          .order('reputation_points', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      ])
+
+      const totalRep = (totalRepRes.data || []).reduce((sum, u) => sum + (u.reputation_points || 0), 0)
+      const totalBadges = totalBadgesRes.count || 0
+      const topContributor = topUserRes.data || null
+
+      return {
+        totalReputationPoints: totalRep,
+        totalEarnedBadges: totalBadges,
+        topContributor
+      }
+    } catch (err) {
+      console.error('Error fetching gamification analytics:', err)
+      return {
+        totalReputationPoints: 0,
+        totalEarnedBadges: 0,
+        topContributor: null
+      }
+    }
+  }, [isAdmin])
+
   return {
     metrics,
     allAnswers,
+    allQuestions,
     loading,
     error,
     fetchMetrics,
     fetchAllAnswers,
+    fetchAllQuestions,
     bulkVerify,
     bulkDelete,
     bulkMarkSpam,
+    adminDeleteQuestion,
+    bulkDeleteQuestions,
+    fetchUsers,
+    fetchAvailableBadges,
+    fetchReputationLogs,
+    adjustUserReputation,
+    awardUserBadge,
+    revokeUserBadge,
+    fetchGamificationAnalytics
   }
 }
