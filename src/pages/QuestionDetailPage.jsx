@@ -253,6 +253,7 @@ export default function QuestionDetailPage() {
                 )}
               </div>
             </div>
+            </div>
 
             <div className="prose prose-slate dark:prose-invert max-w-none mb-6">
               <p className="text-slate-600 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
