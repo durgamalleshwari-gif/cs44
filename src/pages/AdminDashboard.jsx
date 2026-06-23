@@ -419,11 +419,7 @@ export default function AdminDashboard() {
       showToast('Failed to save settings', 'error')
     }
   }
-    } catch (err) {
-      console.error(err)
-      showToast('Bulk spam failed', 'error')
     }
-  }
 
   const handleBulkDeleteQuestions = async () => {
     if (window.confirm(`Are you sure you want to delete the ${selectedQuestionIds.length} selected questions? This will also delete all associated answers.`)) {
