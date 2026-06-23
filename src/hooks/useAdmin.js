@@ -514,7 +514,7 @@ export function useAdmin() {
     spamSettings,
     analytics,
 
-  const adminDeleteQuestion = useCallback(async (id) => {
+  const adminDeleteQuestion: = useCallback(async (id) => {
     if (!isAdmin) throw new Error('Admin only')
     try {
       const { error: deleteError } = await supabase
