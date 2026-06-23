@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Shield, RefreshCw, Clock, CheckCircle, XCircle, AlertTriangle, Inbox, BarChart2, Settings, Search, Sliders, Database, Trash2, Plus, ArrowUpRight, HelpCircle } from 'lucide-react'
-import { motion } from 'framer-motion'
-import { Shield, RefreshCw, Clock, CheckCircle, XCircle, AlertTriangle, Inbox, MessageCircle, HelpCircle, Trash2, Search, Eye, Trophy, Award, Coins, TrendingUp, User } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Avatar from '@/components/ui/Avatar'
 
