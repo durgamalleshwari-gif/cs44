@@ -7,7 +7,8 @@ import Input from '@/components/ui/Input'
 import { useCategories } from '@/hooks/useCategories'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { useToast } from '@/components/ui/Toast'
-
+import { detectSpam } from '@/lib/spamDetector'
+import SpamFeedback from '@/components/ui/SpamFeedback'
 export default function QuestionForm({ onSubmit, loading: submitLoading }) {
   const { register, handleSubmit, formState: { errors }, watch, reset } = useForm()
   const { categories, fetchCategories } = useCategories()
@@ -15,11 +16,28 @@ export default function QuestionForm({ onSubmit, loading: submitLoading }) {
   const { showToast } = useToast()
   const [file, setFile] = useState(null)
   const [tagsInput, setTagsInput] = useState('')
-
+  const [spamResult, setSpamResult] = useState(null)
+  const title = watch('title') || ''
+  const description = watch('description') || ''
   useEffect(() => {
     fetchCategories()
   }, [fetchCategories])
-
+  useEffect(() => {
+    if (!title && !description) {
+      setSpamResult(null)
+      return
+    }
+    let localConfig = null
+    try {
+      const saved = localStorage.getItem('spam_config')
+      if (saved) localConfig = JSON.parse(saved)
+    } catch (e) {
+      console.error(e)
+    }
+    const combinedText = `${title} ${description}`.trim()
+    const result = detectSpam(combinedText, localConfig)
+    setSpamResult(result)
+  }, [title, description])
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0]
     if (selectedFile) {
@@ -35,19 +53,16 @@ export default function QuestionForm({ onSubmit, loading: submitLoading }) {
       setFile(selectedFile)
     }
   }
-
   const handleFormSubmit = async (data) => {
     try {
       let attachmentUrl = null
       if (file) {
         attachmentUrl = await uploadFile(file)
       }
-
       const tags = tagsInput
         .split(',')
         .map(t => t.trim())
         .filter(Boolean)
-
       await onSubmit({
         title: data.title,
         description: data.description,
@@ -55,7 +70,6 @@ export default function QuestionForm({ onSubmit, loading: submitLoading }) {
         tags,
         attachment_url: attachmentUrl,
       })
-
       reset()
       setFile(null)
       setTagsInput('')
@@ -63,7 +77,6 @@ export default function QuestionForm({ onSubmit, loading: submitLoading }) {
       showToast(err.message || 'Failed to post question', 'error')
     }
   }
-
   return (
     <motion.form
       onSubmit={handleSubmit(handleFormSubmit)}
@@ -91,7 +104,6 @@ export default function QuestionForm({ onSubmit, loading: submitLoading }) {
           </p>
         )}
       </div>
-
       <div>
         <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
           Description *
@@ -112,7 +124,6 @@ export default function QuestionForm({ onSubmit, loading: submitLoading }) {
           </p>
         )}
       </div>
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
@@ -134,7 +145,6 @@ export default function QuestionForm({ onSubmit, loading: submitLoading }) {
             </p>
           )}
         </div>
-
         <div>
           <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
             Tags
@@ -156,7 +166,6 @@ export default function QuestionForm({ onSubmit, loading: submitLoading }) {
           )}
         </div>
       </div>
-
       <div>
         <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
           Attachment
@@ -189,7 +198,9 @@ export default function QuestionForm({ onSubmit, loading: submitLoading }) {
           </label>
         )}
       </div>
-
+      {spamResult && spamResult.score > 0 && (
+        <SpamFeedback spamResult={spamResult} />
+      )}
       <div className="flex justify-end pt-2">
         <Button
           type="submit"
